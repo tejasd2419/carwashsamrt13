@@ -1,191 +1,99 @@
 "use client"
-
-import { useState } from "react"
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog"
+import { useEffect, useState } from "react"
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
-import { Badge } from "@/components/ui/badge"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Clock, CheckCircle, XCircle, AlertCircle, Mail, Calendar } from "lucide-react"
-import type { Booking } from "@/lib/types"
+import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@/components/ui/select"
 
-interface BookingStatusModalProps {
-  booking: Booking | null
-  isOpen: boolean
-  onClose: () => void
-  onStatusChange: (bookingId: string, newStatus: string) => Promise<void>
-  isUpdating: boolean
-}
+export function BookingStatusModal({ booking, isOpen, onClose, onStatusChange, isUpdating }) {
+  const [staffList, setStaffList] = useState([])
+  const [assigned, setAssigned] = useState(null)
+  const [status, setStatus] = useState(booking?.status || "")
 
-export function BookingStatusModal({ booking, isOpen, onClose, onStatusChange, isUpdating }: BookingStatusModalProps) {
-  const [selectedStatus, setSelectedStatus] = useState<string>("")
-
-  const statusOptions = ["Pending", "Confirmed", "In-Progress", "Completed", "Cancelled"]
-
-  const getStatusColor = (status: string) => {
-    switch (status?.toLowerCase()) {
-      case "pending":
-        return "bg-yellow-100 text-yellow-800"
-      case "confirmed":
-        return "bg-blue-100 text-blue-800"
-      case "in-progress":
-        return "bg-purple-100 text-purple-800"
-      case "completed":
-        return "bg-green-100 text-green-800"
-      case "cancelled":
-        return "bg-red-100 text-red-800"
-      default:
-        return "bg-gray-100 text-gray-800"
+  useEffect(() => {
+    if (isOpen) {
+      setStatus(booking?.status || "")
+      setAssigned(booking?.assigned_staff_id ?? null)
+      const token = localStorage.getItem("admin_token") || localStorage.getItem("auth_token") || ""
+      fetch("http://localhost:5000/api/admin/staff", { headers: { Authorization: `Bearer ${token}` } })
+        .then((r) => r.json())
+        .then((d) => {
+          if (d.success) setStaffList(d.data.staff || [])
+        })
+        .catch((e) => console.error(e))
     }
-  }
+  }, [isOpen, booking])
 
-  const getStatusIcon = (status: string) => {
-    switch (status?.toLowerCase()) {
-      case "pending":
-        return <AlertCircle className="w-4 h-4" />
-      case "confirmed":
-        return <CheckCircle className="w-4 h-4" />
-      case "in-progress":
-        return <Clock className="w-4 h-4" />
-      case "completed":
-        return <CheckCircle className="w-4 h-4" />
-      case "cancelled":
-        return <XCircle className="w-4 h-4" />
-      default:
-        return null
+  const save = async () => {
+    const token = localStorage.getItem("admin_token") || localStorage.getItem("auth_token") || ""
+    try {
+      if (status && status !== booking?.status) {
+        await fetch(`http://localhost:5000/api/admin/bookings/${booking.id}/status`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+          body: JSON.stringify({ status }),
+        })
+      }
+
+      await fetch(`http://localhost:5000/api/admin/bookings/${booking.id}/assign`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ assignedTo: assigned === "" ? null : assigned }),
+      })
+
+      if (onStatusChange) await onStatusChange(booking.id, status)
+      onClose()
+    } catch (err) {
+      console.error(err)
     }
   }
 
   if (!booking) return null
 
-  const handleStatusUpdate = async () => {
-    if (selectedStatus && selectedStatus !== booking.status) {
-      await onStatusChange(booking.id, selectedStatus)
-      onClose()
-      setSelectedStatus("")
-    }
-  }
-
   return (
-    <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="max-w-2xl">
+    <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
+      <DialogContent>
         <DialogHeader>
-          <DialogTitle>Booking Details & Status Update</DialogTitle>
-          <DialogDescription>Update the booking status and send notifications to customer</DialogDescription>
+          <DialogTitle>Update Booking</DialogTitle>
         </DialogHeader>
 
-        <div className="space-y-6">
-          {/* Booking Information */}
-          <Card>
-            <CardHeader className="pb-3">
-              <CardTitle className="text-lg">Booking Information</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <p className="text-sm text-gray-500">Booking ID</p>
-                  <p className="font-semibold">{booking.id}</p>
-                </div>
-                <div>
-                  <p className="text-sm text-gray-500">Customer Name</p>
-                  <p className="font-semibold">{booking.customerName}</p>
-                </div>
-                <div>
-                  <p className="text-sm text-gray-500">Service</p>
-                  <p className="font-semibold">{booking.serviceName}</p>
-                </div>
-                <div>
-                  <p className="text-sm text-gray-500">Amount</p>
-                  <p className="font-semibold">₹{booking.amount}</p>
-                </div>
-              </div>
+        <div className="space-y-4">
+          <div>
+            <label className="block text-sm">Status</label>
+            <Select value={status} onValueChange={(v) => setStatus(v)}>
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="Pending">Pending</SelectItem>
+                <SelectItem value="Confirmed">Confirmed</SelectItem>
+                <SelectItem value="In-Progress">In-Progress</SelectItem>
+                <SelectItem value="Completed">Completed</SelectItem>
+                <SelectItem value="Cancelled">Cancelled</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
 
-              <div className="border-t pt-4 space-y-3">
-                <div className="flex items-center gap-2">
-                  <Calendar className="w-4 h-4 text-gray-500" />
-                  <div>
-                    <p className="text-sm text-gray-500">Date & Time</p>
-                    <p className="font-semibold">
-                      {booking.date} at {booking.time}
-                    </p>
-                  </div>
-                </div>
+          <div>
+            <label className="block text-sm">Assign Staff</label>
+            <Select value={assigned ?? ""} onValueChange={(v) => setAssigned(v === "" ? null : Number(v))}>
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="">Unassigned</SelectItem>
+                {staffList.map((s) => (
+                  <SelectItem key={s.id} value={String(s.id)}>
+                    {s.name} {s.position ? `— ${s.position}` : ""}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
 
-                <div className="flex items-center gap-2">
-                  <Mail className="w-4 h-4 text-gray-500" />
-                  <div>
-                    <p className="text-sm text-gray-500">Customer Phone</p>
-                    <p className="font-semibold">{booking.customerPhone}</p>
-                  </div>
-                </div>
-
-                <div>
-                  <p className="text-sm text-gray-500">Vehicle</p>
-                  <p className="font-semibold">
-                    {booking.vehicleName} - {booking.vehicleNumber}
-                  </p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-
-          {/* Current Status */}
-          <Card>
-            <CardHeader className="pb-3">
-              <CardTitle className="text-lg">Current Status</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="flex items-center gap-3">
-                {getStatusIcon(booking.status)}
-                <Badge className={`px-3 py-1 ${getStatusColor(booking.status)}`}>{booking.status}</Badge>
-              </div>
-            </CardContent>
-          </Card>
-
-          {/* Update Status */}
-          <Card>
-            <CardHeader className="pb-3">
-              <CardTitle className="text-lg">Update Status</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div>
-                <label className="text-sm font-medium mb-2 block">New Status</label>
-                <Select value={selectedStatus} onValueChange={setSelectedStatus}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select new status" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {statusOptions.map((status) => (
-                      <SelectItem key={status} value={status}>
-                        {status}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 text-sm text-blue-800">
-                <p className="font-semibold mb-1">Email Notification</p>
-                <p>
-                  Customer will automatically receive an email notification when you update the status to:{" "}
-                  <strong>Confirmed, Completed, or Cancelled</strong>
-                </p>
-              </div>
-
-              <div className="flex gap-3">
-                <Button
-                  onClick={handleStatusUpdate}
-                  disabled={!selectedStatus || selectedStatus === booking.status || isUpdating}
-                  className="flex-1"
-                >
-                  {isUpdating ? "Updating..." : "Update Status & Notify"}
-                </Button>
-                <Button onClick={onClose} variant="outline" className="flex-1 bg-transparent">
-                  Cancel
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
+          <div className="flex justify-end gap-2">
+            <Button variant="outline" onClick={onClose}>Cancel</Button>
+            <Button onClick={save} disabled={isUpdating}>Save</Button>
+          </div>
         </div>
       </DialogContent>
     </Dialog>
